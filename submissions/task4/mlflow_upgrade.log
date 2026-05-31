@@ -1,0 +1,29 @@
+Command:
+docker compose build mlflow
+
+Relevant result:
+Image mlops-hw-2-mlflow Built
+
+Command:
+docker compose up -d mlflow
+
+Relevant result:
+Container mlops-hw-2-mlflow-1 Started
+
+Command:
+curl -sS -I http://localhost:5001
+
+Relevant result:
+HTTP/1.1 200 OK
+
+Command:
+.venv/bin/python -m src.eval --config v1 --limit 1 --no-register
+
+Relevant result:
+run_id: 7954be5f82c64412b3d7802d2295f03e
+registered: (skipped)
+accuracy_overall: 1.000
+View run: http://localhost:5001/#/experiments/1/runs/7954be5f82c64412b3d7802d2295f03e
+
+Conclusion:
+MLflow 3.12.0 builds, serves HTTP, resolves registry state, and accepts eval run logging.

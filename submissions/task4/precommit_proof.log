@@ -1,0 +1,16 @@
+Command:
+env PRE_COMMIT_HOME=.cache/pre-commit .venv/bin/pre-commit run --all-files
+
+Result:
+gitleaks (detect committed secrets)......................................Passed
+detect private key.......................................................Passed
+check for added large files..............................................Passed
+fix end of files.........................................................Passed
+trim trailing whitespace.................................................Passed
+check yaml...............................................................Passed
+check toml...............................................................Passed
+ruff.....................................................................Passed
+ruff-format..............................................................Passed
+
+Conclusion:
+All configured pre-commit checks passed after the Task 4 and MLflow upgrade changes.
