@@ -12,6 +12,7 @@ downstream Prometheus metrics and MLflow logging.
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import dataclass
 
@@ -34,6 +35,7 @@ class _Stage:
     model: ModelSpec
     system_prompt: str
     role: str
+    enable_thinking: bool
 
 
 def _call(client: OpenAI, stage: _Stage, user_content: str) -> tuple[str, ModelCall]:
@@ -45,7 +47,9 @@ def _call(client: OpenAI, stage: _Stage, user_content: str) -> tuple[str, ModelC
             {"role": "user", "content": user_content},
         ],
         temperature=stage.model.temperature,
-        max_tokens=stage.model.max_tokens,
+        # Nemotron is a reasoning model. Gates emit terse labels and should not
+        # spend tokens thinking; the main assistant keeps thinking enabled.
+        extra_body={"chat_template_kwargs": {"enable_thinking": stage.enable_thinking}},
     )
     elapsed = time.perf_counter() - start
     text = completion.choices[0].message.content or ""
@@ -61,7 +65,7 @@ def _call(client: OpenAI, stage: _Stage, user_content: str) -> tuple[str, ModelC
 
 
 def _parse_input_category(raw: str) -> str:
-    cleaned = raw.strip().strip('"\'').lower()
+    cleaned = raw.strip().strip("\"'").lower()
     for label in ("travel", "off_topic", "suspicious"):
         if cleaned == label or cleaned.startswith(label):
             return label
@@ -69,7 +73,7 @@ def _parse_input_category(raw: str) -> str:
 
 
 def _parse_output_verdict(raw: str) -> str:
-    cleaned = raw.strip().strip('"\'').lower()
+    cleaned = raw.strip().strip("\"'").lower()
     for label in ("ok", "leaked"):
         if cleaned == label or cleaned.startswith(label):
             return label
@@ -92,7 +96,7 @@ class Pipeline:
         self._output_validator = output_validator
         self._client = client
 
-    def respond(self, user_message: str) -> AssistantResponse:
+    def respond(self, user_message: str, *, debug: bool = False) -> AssistantResponse:
         calls: list[ModelCall] = []
         category: str | None = None
 
@@ -101,6 +105,11 @@ class Pipeline:
             raw, call = _call(self._client, self._input_classifier, user_message)
             calls.append(call)
             category = _parse_input_category(raw)
+            if debug:
+                print(
+                    "DEBUG input_classifier " f"raw={raw!r} parsed={category!r}",
+                    file=sys.stderr,
+                )
             if category != "travel":
                 return AssistantResponse(
                     text=CANNED_REFUSAL,
@@ -121,6 +130,11 @@ class Pipeline:
             raw, val_call = _call(self._client, self._output_validator, text)
             calls.append(val_call)
             verdict = _parse_output_verdict(raw)
+            if debug:
+                print(
+                    "DEBUG output_validator " f"raw={raw!r} parsed={verdict!r}",
+                    file=sys.stderr,
+                )
             if verdict == "leaked":
                 return AssistantResponse(
                     text=CANNED_REFUSAL,
@@ -144,6 +158,7 @@ def _classifier_stage(spec: ClassifierSpec, role: str) -> _Stage:
         model=spec.model,
         system_prompt=spec.prompt,
         role=role,
+        enable_thinking=False,
     )
 
 
@@ -156,6 +171,7 @@ def build_pipeline(config: AssistantConfig) -> Pipeline:
         model=config.model,
         system_prompt=config.system_prompt,
         role="main_assistant",
+        enable_thinking=True,
     )
 
     g = config.guardrail

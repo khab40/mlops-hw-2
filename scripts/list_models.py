@@ -42,9 +42,7 @@ def load_key() -> str:
 
 def main() -> None:
     key = load_key()
-    base_url = os.environ.get(
-        "NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/"
-    )
+    base_url = os.environ.get("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
 
     try:
         from openai import OpenAI

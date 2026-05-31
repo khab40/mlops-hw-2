@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
-from src.judge import judge as run_judge
-from src.monitoring.metrics import deep_judge_queue_depth
-# TODO (Task 4): import judge_evaluations_total and judge_latency_seconds
-# once you've defined them in src/monitoring/metrics.py. Then emit them
-# in run() below where indicated.
+from src.judge import Verdict, judge as run_judge
+from src.monitoring.metrics import (
+    deep_judge_queue_depth,
+    judge_evaluations_total,
+    judge_latency_seconds,
+)
 
 log = logging.getLogger(__name__)
 
@@ -29,21 +31,22 @@ class JudgeWorker:
             while True:
                 config_id, user_message, assistant_response = await self._queue.get()
                 deep_judge_queue_depth.set(self._queue.qsize())
+                start = time.perf_counter()
                 try:
-                    result = await asyncio.to_thread(
-                        run_judge, user_message, assistant_response
+                    result = await asyncio.to_thread(run_judge, user_message, assistant_response)
+                    judge_evaluations_total.labels(
+                        config_id=config_id, verdict=result.verdict.value
+                    ).inc()
+                    judge_latency_seconds.labels(config_id=config_id).observe(
+                        result.latency_seconds
                     )
-                    # TODO (Task 4): emit the two sampled metrics here.
-                    #   judge_evaluations_total.labels(
-                    #       config_id=config_id, verdict=result.verdict.value
-                    #   ).inc()
-                    #   judge_latency_seconds.labels(config_id=config_id).observe(
-                    #       result.latency_seconds
-                    #   )
-                    # The DIVERGENCE Grafana panel needs verdict="leaked" series from
-                    # the first; the Judge-verdicts panel slices by verdict.
-                    _ = result  # silence unused-variable lint until you wire it up
                 except Exception:  # noqa: BLE001
+                    judge_evaluations_total.labels(
+                        config_id=config_id, verdict=Verdict.JUDGE_ERROR.value
+                    ).inc()
+                    judge_latency_seconds.labels(config_id=config_id).observe(
+                        time.perf_counter() - start
+                    )
                     log.exception("JudgeWorker iteration failed")
                 finally:
                     self._queue.task_done()

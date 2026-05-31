@@ -1,9 +1,10 @@
-display_name: "Sandwich (input + output validator)"
-description: "Input classifier in front + output validator behind. Defense in depth."
+# ANSWER Task 3 - defines a hardened sandwich config for eval, registration, and promotion.
+display_name: "Hardened sandwich"
+description: "Combines the anti-jailbreak main prompt with input classification and output validation."
 model:
   name: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
   temperature: 0.0
-system_prompt: prompts/v2_explicit_refusal.txt
+system_prompt: prompts/v3_prompt_hardening.txt
 guardrail:
   type: sandwich
   input_classifier:

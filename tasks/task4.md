@@ -342,11 +342,13 @@ PromQL hint patterns — fill in metric names yourself:
    - **Latency**: three quantile lines per config (p50 < p95 < p99).
    - **Burn rate**: one line per model used.
    - **Judge verdicts**: one line per verdict that fired.
+   - **LLM API error rate**: expected to remain empty during healthy traffic. To populate it for an operational test, temporarily run uvicorn with a bad `NEBIUS_BASE_URL`, send one `/chat` request, wait for a scrape, then restart normally.
 
 ## Common pitfalls
 
 - **"No data" on Latency** despite the Histogram being defined → you forgot `le` in the `by()` clause of `histogram_quantile`. Re-read the bucket section.
 - **"No data" on DIVERGENCE leakage line** → either insufficient traffic for the judge to have fired (raise `JUDGE_SAMPLE_RATE`), or `judge_evaluations_total` isn't actually being emitted in `judge_worker.py`. Cross-check by hitting `/metrics` directly: `curl http://localhost:8000/metrics | grep judge_evaluations_total`.
+- **"No data" on LLM API error rate** → expected if the LLM API has not failed. `llm_api_errors_total` is a failure counter, and a labeled `error_type` series is created only after the first exception.
 - **Burn rate panel reads $0** → Nebius didn't return pricing for the model you're using (model id mismatch, or model just added). The service logs `WARNING: No pricing returned by Nebius for model ...` on first use. Verify the model id against `python scripts/list_models.py --verbose`.
 - **Empty panel description still says "[Task 4 — implement]"** → expected on a fresh repo; you may edit the description in the JSON to remove the placeholder once you've filled the targets, or leave it as-is.
 

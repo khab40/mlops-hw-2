@@ -34,15 +34,14 @@ from src.monitoring.judge_worker import JudgeWorker
 from src.monitoring.metrics import (
     assistant_info,
     chat_cost_usd_total,
+    chat_input_tokens,
+    chat_output_tokens,
+    chat_request_duration_seconds,
     chat_requests_total,
     deep_judge_queue_depth,
     in_flight_requests,
     judge_sample_rate,
     llm_api_errors_total,
-    # TODO (Task 4): import chat_request_duration_seconds, chat_input_tokens,
-    # chat_output_tokens once you've defined them in src/monitoring/metrics.py.
-    # Then add the token .observe() calls inside the cost loop in /chat below,
-    # and the duration .observe() in the `finally:` block.
 )
 
 log = logging.getLogger(__name__)
@@ -61,6 +60,7 @@ _ASSISTANT_INFO_LABEL_ORDER = (
 
 
 # --- Reload machinery -------------------------------------------------------
+
 
 async def _resolve_and_build() -> tuple[Pipeline, dict[str, str]]:
     """Resolve current config (Registry alias if set, else local dev config)
@@ -117,6 +117,7 @@ def _swap(app: FastAPI, pipeline: Pipeline, labels: dict[str, str]) -> None:
 
 # --- Admin-token auth dependency --------------------------------------------
 
+
 async def _require_admin_token(
     x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
 ) -> None:
@@ -130,6 +131,7 @@ async def _require_admin_token(
 
 
 # --- Lifecycle --------------------------------------------------------------
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -197,6 +199,7 @@ class ReloadResponse(BaseModel):
 
 # --- Endpoints --------------------------------------------------------------
 
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -220,9 +223,7 @@ async def admin_reload() -> ReloadResponse:
             detail=f"reload failed: {type(exc).__name__}: {exc}",
         ) from exc
 
-    previous: dict[str, str] = dict(
-        getattr(app.state, "assistant_info_labels", {}) or {}
-    )
+    previous: dict[str, str] = dict(getattr(app.state, "assistant_info_labels", {}) or {})
     _swap(app, pipeline, labels)
     log.info("/admin/reload swapped: previous=%s current=%s", previous, labels)
     return ReloadResponse(status="ok", previous=previous, current=labels)
@@ -241,25 +242,24 @@ async def chat(req: ChatRequest) -> ChatResponse:
     start = time.perf_counter()
     try:
         try:
-            response: AssistantResponse = await asyncio.to_thread(
-                pipeline.respond, req.message
-            )
+            response: AssistantResponse = await asyncio.to_thread(pipeline.respond, req.message)
         except Exception as exc:  # noqa: BLE001
-            llm_api_errors_total.labels(
-                config_id=config_id, error_type=type(exc).__name__
-            ).inc()
+            llm_api_errors_total.labels(config_id=config_id, error_type=type(exc).__name__).inc()
             raise
 
         # Per-ModelCall cost increment (worked example). A /chat may produce
         # multiple model calls (v4 = 2: classifier + main; v5 = 3: classifier +
         # main + output validator); emit per call, not per request.
         for call in response.model_calls:
-            chat_cost_usd_total.labels(
-                config_id=config_id, model=call.model
-            ).inc(cost_usd(call.model, call.input_tokens, call.output_tokens))
-            # TODO (Task 4): in the same loop, observe per-call token counts on
-            # `chat_input_tokens` and `chat_output_tokens` (labels: config_id,
-            # model) once you've defined those Histograms.
+            chat_cost_usd_total.labels(config_id=config_id, model=call.model).inc(
+                cost_usd(call.model, call.input_tokens, call.output_tokens)
+            )
+            chat_input_tokens.labels(config_id=config_id, model=call.model).observe(
+                call.input_tokens
+            )
+            chat_output_tokens.labels(config_id=config_id, model=call.model).observe(
+                call.output_tokens
+            )
 
         chat_requests_total.labels(
             config_id=config_id,
@@ -294,8 +294,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             ],
         )
     finally:
-        # TODO (Task 4): observe end-to-end request duration on
-        # chat_request_duration_seconds (labels: config_id). Use
-        # time.perf_counter() - start. The latency-quantiles Grafana panel
-        # reads from this Histogram via histogram_quantile(...).
+        chat_request_duration_seconds.labels(config_id=config_id).observe(
+            time.perf_counter() - start
+        )
         in_flight_requests.dec()

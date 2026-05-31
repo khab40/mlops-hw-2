@@ -22,6 +22,6 @@ class AssistantResponse:
 
     text: str
     refused: bool
-    input_category: str | None       # set if an input classifier ran
-    output_verdict: str | None       # set if an output validator ran
+    input_category: str | None  # set if an input classifier ran
+    output_verdict: str | None  # set if an output validator ran
     model_calls: list[ModelCall] = field(default_factory=list)

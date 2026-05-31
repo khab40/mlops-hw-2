@@ -32,7 +32,6 @@ class ModelSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str
     temperature: float = 0.0
-    max_tokens: int = 512
 
 
 class ClassifierSpec(BaseModel):
@@ -67,7 +66,7 @@ Guardrail = Annotated[
 
 class AssistantConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    config_id: str | None = None       # populated from filename stem by loaders
+    config_id: str | None = None  # populated from filename stem by loaders
     display_name: str
     description: str
     model: ModelSpec
@@ -121,14 +120,11 @@ def load_configs(configs_dir: Path | str = "configs") -> dict[str, AssistantConf
     return result
 
 
-def load_config(
-    config_id: str, configs_dir: Path | str = "configs"
-) -> AssistantConfig:
+def load_config(config_id: str, configs_dir: Path | str = "configs") -> AssistantConfig:
     configs = load_configs(configs_dir)
     if config_id not in configs:
         raise KeyError(
-            f"Config {config_id!r} not found in {configs_dir}. "
-            f"Available: {sorted(configs)}"
+            f"Config {config_id!r} not found in {configs_dir}. " f"Available: {sorted(configs)}"
         )
     return configs[config_id]
 
@@ -137,9 +133,7 @@ def load_config_from_mlflow(run_id: str) -> AssistantConfig:
     """Debug utility: fetch a deployment manifest directly from a specific run."""
     import mlflow
 
-    local_path = mlflow.artifacts.download_artifacts(
-        run_id=run_id, artifact_path="config.json"
-    )
+    local_path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="config.json")
     with open(local_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return AssistantConfig.model_validate(data)

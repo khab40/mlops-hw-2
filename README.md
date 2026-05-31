@@ -1,3 +1,5 @@
+![Travel Assistant MLOps repository banner](assets/repo-banner.png)
+
 # Travel-assistant MLOps homework (Deadline: June 8)
 
 A travel assistant built to be evaluated and monitored (and jailbroken) properly.
@@ -42,7 +44,9 @@ In this task we don't care much about the quality of travel advice — it's abou
 - `src/monitoring/` — Prometheus metric definitions + `judge_worker.py`, a background async worker that takes a sampled fraction (default 5%) of live `/chat` exchanges off an internal asyncio queue and runs the LLM judge on each. Gives production a "ground-truth quality" signal without paying for a judge call on every request.
 - `observability/` — Prometheus scrape config + Grafana dashboards.
 - `docker-compose.yml` — describes whatever needs to be installed.
+- `docs/ARCHITECTURE.md` — architecture overview with Mermaid diagrams for the request path, eval, promotion, deployment, and live monitoring flows.
 - `docs/serverless.md` — sketch of how this stack would look as a serverless v2. Optional reading; not needed for any task.
+- `assets/` — repository banner and favicon/web preview images.
 
 ## MLOps tooling
 
@@ -393,7 +397,7 @@ Rate of each judge verdict. Five possible values: `answered_correctly`, `refused
 
 `sum by (error_type) (rate(llm_api_errors_total[5m]))`
 
-Operational health. Each exception type (`RateLimitError`, `APITimeoutError`, `APIConnectionError`, …) becomes its own series. Spikes here usually mean the Nebius endpoint is throttling you or having issues; nothing about the config is wrong.
+Operational health. Each exception type (`RateLimitError`, `APITimeoutError`, `APIConnectionError`, ...) becomes its own series. Spikes here usually mean the Nebius endpoint is throttling you or having issues; nothing about the config is wrong. This panel is normally empty on healthy traffic because no labeled counter series exists until the first LLM exception. To test it deliberately, start uvicorn once with an unreachable base URL such as `NEBIUS_BASE_URL=http://127.0.0.1:9/v1/`, send one `/chat` request, wait for Prometheus to scrape, and then restart with the normal `.env`.
 
 ## Iterating on configs
 
@@ -425,10 +429,10 @@ You almost never need `docker compose down`. Containers and named volumes (MLflo
 | `Dockerfile` or anything that affects an image *built* by compose (e.g., `docker/mlflow.Dockerfile`) | `docker compose build` then `docker compose up -d`. |
 | You really want a clean slate | `docker compose down && docker compose up -d`. Volumes survive. Add `-v` to `down` to also drop volumes (loses your MLflow DB and MinIO artifacts — only do this for a full reset). |
 
-Quick mental shortcut: 
+Quick mental shortcut:
 
-- Python change → uvicorn restart. 
-- Compose change → `compose up -d`. 
+- Python change → uvicorn restart.
+- Compose change → `compose up -d`.
 - Config-file-mounted-to-running-container change → `compose restart <service>`.
 
 ## Secrets

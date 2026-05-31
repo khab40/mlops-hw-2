@@ -52,9 +52,26 @@ def _load_dataset(path: pathlib.Path) -> list[dict]:
     return rows
 
 
-def _eval_example(pipeline, example: dict, judge_model: str) -> dict:
+def _parse_debug(value: str | None) -> bool:
+    if value is None:
+        return True
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("debug must be one of: 1, 0, true, false, yes, no")
+
+
+def _eval_example(pipeline, example: dict, judge_model: str, *, debug: bool = False) -> dict:
     """Run assistant + judge on one example. Returns a flat dict for logging."""
-    response: AssistantResponse = pipeline.respond(example["prompt"])
+    if debug:
+        print(
+            f"DEBUG eval_example id={example['id']} category={example['category']} "
+            f"expected={example['expected']} prompt={example['prompt']!r}",
+            file=sys.stderr,
+        )
+    response: AssistantResponse = pipeline.respond(example["prompt"], debug=debug)
     judge_result = run_judge(example["prompt"], response.text)
     return {
         "id": example["id"],
@@ -71,8 +88,7 @@ def _eval_example(pipeline, example: dict, judge_model: str) -> dict:
         "total_output_tokens": sum(c.output_tokens for c in response.model_calls),
         "total_latency_seconds": sum(c.latency_seconds for c in response.model_calls),
         "total_cost_usd": sum(
-            cost_usd(c.model, c.input_tokens, c.output_tokens)
-            for c in response.model_calls
+            cost_usd(c.model, c.input_tokens, c.output_tokens) for c in response.model_calls
         ),
         "judge_verdict": judge_result.verdict.value,
         "judge_raw": judge_result.raw,
@@ -118,13 +134,22 @@ def _compute_metrics(rows: list[dict]) -> dict[str, float]:
         metrics[f"accuracy_{cat}"] = correct_by_cat[cat] / total
         metrics[f"refusal_rate_{cat}"] = refused_by_cat[cat] / total
 
-    for verdict, count in Counter(r["judge_verdict"] for r in rows).items():
+    verdict_counts = Counter(r["judge_verdict"] for r in rows)
+    for verdict, count in verdict_counts.items():
         metrics[f"verdict_rate_{verdict}"] = count / n
         # TODO (Task 1): also log per-verdict absolute counts as
         # `judge_evaluations_total_{verdict}`. The `count` variable in scope
         # is the integer count. Mirrors the Prometheus counter
         # `judge_evaluations_total` from Task 4 (one MLflow metric name per
         # verdict, since MLflow run-metrics don't carry labels). See tasks/task1.md.
+        # ANSWER Task 1 - records the absolute MLflow count for each observed judge verdict.
+        metrics[f"judge_evaluations_total_{verdict}"] = float(count)
+    for verdict in Verdict:
+        # ANSWER Task 1 - emits zero-valued count metrics for verdicts absent from this run.
+        metrics.setdefault(
+            f"judge_evaluations_total_{verdict.value}",
+            float(verdict_counts.get(verdict.value, 0)),
+        )
 
     total_cost = sum(r["total_cost_usd"] + r["judge_cost_usd"] for r in rows)
     metrics["total_cost_usd"] = total_cost
@@ -139,6 +164,9 @@ def _compute_metrics(rows: list[dict]) -> dict[str, float]:
     # wrap with `float(...)` before storing. Mirrors the Prometheus histogram
     # quantiles for `chat_request_duration_seconds` from Task 4.
     # See tasks/task1.md.
+    # ANSWER Task 1 - captures median and tail request latency for the eval run.
+    metrics["request_latency_p50_seconds"] = float(np.percentile(latencies, 50))
+    metrics["request_latency_p95_seconds"] = float(np.percentile(latencies, 95))
 
     # Token aggregates. Input side is a worked example; you'll add output side.
     in_toks = [r["total_input_tokens"] for r in rows]
@@ -147,6 +175,10 @@ def _compute_metrics(rows: list[dict]) -> dict[str, float]:
     # TODO (Task 1): add `total_output_tokens` and `mean_output_tokens`,
     # mirroring the input-token pattern. Each row has `total_output_tokens`.
     # See tasks/task1.md.
+    # ANSWER Task 1 - mirrors input token aggregation for generated output tokens.
+    out_toks = [r["total_output_tokens"] for r in rows]
+    metrics["total_output_tokens"] = float(sum(out_toks))
+    metrics["mean_output_tokens"] = sum(out_toks) / n
 
     return metrics
 
@@ -170,14 +202,10 @@ def _log_prompt_artifacts(config: AssistantConfig) -> None:
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         d = pathlib.Path(tmpdir)
-        (d / "main_system_prompt.txt").write_text(
-            config.system_prompt, encoding="utf-8"
-        )
+        (d / "main_system_prompt.txt").write_text(config.system_prompt, encoding="utf-8")
         g = config.guardrail
         if isinstance(g, GuardrailInputClassifier):
-            (d / "input_classifier_prompt.txt").write_text(
-                g.classifier.prompt, encoding="utf-8"
-            )
+            (d / "input_classifier_prompt.txt").write_text(g.classifier.prompt, encoding="utf-8")
         elif isinstance(g, GuardrailSandwich):
             (d / "input_classifier_prompt.txt").write_text(
                 g.input_classifier.prompt, encoding="utf-8"
@@ -213,6 +241,14 @@ def main() -> None:
             "Default: register only on full eval (no --limit); use --register / "
             "--no-register to override either way."
         ),
+    )
+    parser.add_argument(
+        "--debug",
+        nargs="?",
+        const=True,
+        default=False,
+        type=_parse_debug,
+        help="Print raw guardrail classifier outputs. Supports --debug, --debug=1, --debug=0.",
     )
     args = parser.parse_args()
 
@@ -252,7 +288,12 @@ def main() -> None:
         start = time.perf_counter()
         results: list[dict] = []
         for i, example in enumerate(rows_in, start=1):
-            row = _eval_example(pipeline, example, settings.judge_model)
+            row = _eval_example(
+                pipeline,
+                example,
+                settings.judge_model,
+                debug=args.debug,
+            )
             results.append(row)
             if i % 10 == 0 or i == len(rows_in):
                 print(
@@ -320,9 +361,7 @@ def main() -> None:
             )
             registered_version = int(mv.version)
             mlflow.set_tag("registered_version", registered_version)
-            mlflow.set_tag(
-                "registered_model_name", settings.mlflow_registered_model_name
-            )
+            mlflow.set_tag("registered_model_name", settings.mlflow_registered_model_name)
 
         print(f"\n=== {config_id} eval summary ===", file=sys.stderr)
         print(f"  run_id:              {run.info.run_id}", file=sys.stderr)

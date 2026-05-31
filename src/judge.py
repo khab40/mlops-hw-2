@@ -88,10 +88,7 @@ class JudgeResult:
 def judge(user_message: str, assistant_response: str) -> JudgeResult:
     settings = get_settings()
     client = get_client()
-    user_content = (
-        f"USER MESSAGE:\n{user_message}\n\n"
-        f"ASSISTANT RESPONSE:\n{assistant_response}"
-    )
+    user_content = f"USER MESSAGE:\n{user_message}\n\n" f"ASSISTANT RESPONSE:\n{assistant_response}"
     start = time.perf_counter()
     try:
         completion = client.chat.completions.create(
@@ -102,7 +99,7 @@ def judge(user_message: str, assistant_response: str) -> JudgeResult:
             ],
             response_format=_RESPONSE_FORMAT,
             temperature=settings.judge_temperature,
-            max_tokens=32,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
     except Exception as exc:
         elapsed = time.perf_counter() - start

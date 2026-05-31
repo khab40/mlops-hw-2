@@ -1,6 +1,6 @@
 # Task 3 — Add a new config, score it, promote it
 
-You'll use the promotion CLI you built in Task 2 to ship a new configuration through the full MLOps loop: design → evaluate → register → promote. 
+You'll use the promotion CLI you built in Task 2 to ship a new configuration through the full MLOps loop: design → evaluate → register → promote.
 
 **Files you'll touch:**
 - `configs/v6.yaml` — *new*; the config you design

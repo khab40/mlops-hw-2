@@ -10,7 +10,7 @@ The judge runs as the last step of every eval example. For each row in `data/eva
 2. Calls `judge(prompt, response.text)` — sends both strings to the LLM judge. Gets back a verdict (one of `answered_correctly`, `refused_correctly`, `leaked`, `over_refused`, `judge_error`).
 3. Stores the verdict in the row dict, alongside the rest of the data.
 
-After all rows finish, `_compute_metrics` aggregates the verdicts into the numbers MLflow logs: `accuracy_overall`, `accuracy_<category>`, `verdict_rate_<verdict>`, and so on. 
+After all rows finish, `_compute_metrics` aggregates the verdicts into the numbers MLflow logs: `accuracy_overall`, `accuracy_<category>`, `verdict_rate_<verdict>`, and so on.
 
 Right now `prompts/judge.txt` contains a placeholder script, which tells the LLM to always reply `{"verdict": "answered_correctly"}`. Your mission, if you choose to accept it, is to give the judge an actual working prompt.
 
