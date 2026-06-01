@@ -1,4 +1,4 @@
-# Task 3 Session
+# Task 3 Submission and Demo Session
 
 Annotation: Verify that the new config exists and is a meaningful variation.
 

@@ -1,4 +1,4 @@
-# Task 2 Demo Session
+# Task 2 Submission and Demo Session
 
 Annotation: Start by listing the aliases currently set on the registered model.
 
